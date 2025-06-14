@@ -46,15 +46,15 @@ def extract_fields(page):
     type_key = find_key_like("PTO Type")
     date_key = find_key_like("PTO Date")
     notes_key = find_key_like("Additional Notes")
-    respondent = props.get("Respondent", {}).get("created_by", {}).get("name", "Anonymous")
-    
+    respondent_key = find_key_like("Respondent")
+
     # Title
     title = (
         props.get(title_key, {}).get("title", [{}])[0]
         .get("text", {}).get("content", "Untitled")
     ) if title_key else "Untitled"
 
-    # PTO Type (multi_select or fallback to select)
+    # PTO Type (multi_select or select)
     type_prop = props.get(type_key, {}) if type_key else {}
     multi_select = type_prop.get("multi_select", [])
     if multi_select:
@@ -62,7 +62,7 @@ def extract_fields(page):
     else:
         pto_type = type_prop.get("select", {}).get("name", "N/A")
 
-    # PTO Dates (start + end)
+    # PTO Dates
     date_range = props.get(date_key, {}).get("date", {}) if date_key else {}
     start_date = date_range.get("start", "N/A")
     end_date = date_range.get("end", start_date)
@@ -73,10 +73,15 @@ def extract_fields(page):
         .get("text", {}).get("content", "None")
     ) if notes_key else "None"
 
-    # Respondent (people[] list)
-    respondent = page.get("created_by", {}).get("name", "Anonymous")
+    # ✅ Correct Respondent extraction
+    respondent = (
+        props.get(respondent_key, {})
+             .get("created_by", {})
+             .get("name", "Anonymous")
+    ) if respondent_key else "Anonymous"
 
     return title, pto_type, start_date, end_date, notes, respondent
+
 
 def send_to_slack(title, pto_type, start_date, end_date, notes, respondent):
     msg = (
