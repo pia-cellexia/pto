@@ -46,11 +46,7 @@ def extract_fields(page):
     type_key = find_key_like("PTO Type")
     date_key = find_key_like("PTO Date")
     notes_key = find_key_like("Additional Notes")
-    respondent = (
-    props.get("Respondent", {})
-         .get("created_by", {})
-         .get("name", "Anonymous")
-    )
+    respondent = props.get("Respondent", {}).get("created_by", {}).get("name", "Anonymous")
     
     # Title
     title = (
@@ -100,31 +96,21 @@ def send_to_slack(title, pto_type, start_date, end_date, notes, respondent):
         json={"channel": SLACK_CHANNEL_ID, "text": msg}
     )
 
-def poll_notion():
-    print("✅ Notion poller running.")
-    last_seen = load_last_seen()
+from datetime import datetime, timedelta
 
+def poll_notion():
+    print("✅ Notion poller running (time-filtered).")
     while True:
         try:
             pages = query_notion()
-            if pages:
-                print("DEBUG: Property keys from latest page:")
-                print(list(pages[0].get("properties", {}).keys()))
-                print("DEBUG: Sample data:")
-                print(json.dumps(pages[0].get("properties", {}), indent=2))
-
-            new_pages = []
+            now = datetime.utcnow()
             for page in pages:
                 created = page.get("created_time", "")
-                if created > last_seen:
-                    new_pages.append((created, page))
-            new_pages.sort()
-
-            for created, page in new_pages:
-                fields = extract_fields(page)
-                send_to_slack(*fields)
-                last_seen = max(last_seen, created)
-                save_last_seen(last_seen)
+                created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                # only post pages created in the last 3 minutes
+                if (now - created_dt) < timedelta(minutes=3):
+                    fields = extract_fields(page)
+                    send_to_slack(*fields)
         except Exception as e:
             print("⚠️ Error during polling:", e)
         time.sleep(30)
