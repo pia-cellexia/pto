@@ -28,12 +28,27 @@ def query_notion():
 
 def extract_fields(page):
     props = page.get("properties", {})
-    title = props.get("PTO Request Title", {}).get("title", [{}])[0].get("text", {}).get("content", "Untitled")
-    pto_type = props.get("PTO Type", {}).get("select", {}).get("name", "N/A")
-    start_date = props.get("Start Date", {}).get("date", {}).get("start", "N/A")
-    end_date = props.get("End Date", {}).get("date", {}).get("end", start_date)
-    notes = props.get("Additional Notes", {}).get("rich_text", [{}])[0].get("text", {}).get("content", "None")
+
+    title = (
+        props.get("PTO Request Title", {}).get("title", [{}])[0]
+        .get("text", {}).get("content", "Untitled")
+    )
+
+    pto_type = (
+        props.get("PTO Type", {}).get("select", {}).get("name", "N/A")
+    )
+
+    date_range = props.get("Start Date", {}).get("date", {})
+    start_date = date_range.get("start", "N/A")
+    end_date = date_range.get("end", start_date) if date_range else start_date
+
+    notes = (
+        props.get("Additional Notes", {}).get("rich_text", [{}])[0]
+        .get("text", {}).get("content", "None")
+    )
+
     return title, pto_type, start_date, end_date, notes
+
 
 def send_to_slack(title, pto_type, start_date, end_date, notes):
     msg = f"📌 *New PTO Request!*\n*Title:* {title}\n*Type:* {pto_type}\n*Dates:* {start_date} → {end_date}\n*Notes:* {notes}"
