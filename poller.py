@@ -39,28 +39,50 @@ def query_notion():
 def extract_fields(page):
     props = page.get("properties", {})
 
+    # 🔍 Try to auto-detect keys
+    def find_key_like(target):
+        return next((k for k in props if target.lower() in k.lower()), None)
+
+    title_key = find_key_like("PTO Request Title")
+    type_key = find_key_like("PTO Type")
+    date_key = find_key_like("Date")
+    notes_key = find_key_like("Additional Notes")
+    person_key = find_key_like("Respondent")
+
     title = (
-        props.get("PTO Request Title", {}).get("title", [{}])[0]
+        props.get(title_key, {}).get("title", [{}])[0]
         .get("text", {}).get("content", "Untitled")
-    )
+    ) if title_key else "Untitled"
 
     pto_type = (
-        props.get("PTO Type", {}).get("select", {}).get("name", "N/A")
-    )
+        props.get(type_key, {}).get("select", {}).get("name", "N/A")
+    ) if type_key else "N/A"
 
-    date_range = props.get("Start Date", {}).get("date", {})
+    date_range = props.get(date_key, {}).get("date", {}) if date_key else {}
     start_date = date_range.get("start", "N/A")
     end_date = date_range.get("end", start_date) if date_range else start_date
 
     notes = (
-        props.get("Additional Notes", {}).get("rich_text", [{}])[0]
+        props.get(notes_key, {}).get("rich_text", [{}])[0]
         .get("text", {}).get("content", "None")
+    ) if notes_key else "None"
+
+    respondent = (
+        props.get(person_key, {}).get("people", [{}])[0]
+        .get("name", "Anonymous")
+    ) if person_key else "Anonymous"
+
+    return title, pto_type, start_date, end_date, notes, respondent
+
+def send_to_slack(title, pto_type, start_date, end_date, notes, respondent):
+    msg = (
+        f"*New PTO Request!*\n"
+        f"*Respondent:* {respondent}\n"
+        f"*Title:* {title}\n"
+        f"*Type:* {pto_type}\n"
+        f"*Dates:* {start_date} → {end_date}\n"
+        f"*Notes:* {notes}"
     )
-
-    return title, pto_type, start_date, end_date, notes
-
-def send_to_slack(title, pto_type, start_date, end_date, notes):
-    msg = f"📌 *New PTO Request!*\n*Title:* {title}\n*Type:* {pto_type}\n*Dates:* {start_date} → {end_date}\n*Notes:* {notes}"
     requests.post(
         "https://slack.com/api/chat.postMessage",
         headers={
@@ -71,17 +93,24 @@ def send_to_slack(title, pto_type, start_date, end_date, notes):
     )
 
 def poll_notion():
-    print("✅ Poller started.")
+    print("✅ Notion poller running.")
     last_seen = load_last_seen()
+
     while True:
         try:
             pages = query_notion()
+            if pages:
+                print("DEBUG: Property keys from latest page:")
+                print(list(pages[0].get("properties", {}).keys()))
+                print("DEBUG: Sample data:")
+                print(json.dumps(pages[0].get("properties", {}), indent=2))
+
             new_pages = []
             for page in pages:
                 created = page.get("created_time", "")
                 if created > last_seen:
                     new_pages.append((created, page))
-            new_pages.sort()  # process oldest first
+            new_pages.sort()
 
             for created, page in new_pages:
                 fields = extract_fields(page)
@@ -92,12 +121,12 @@ def poll_notion():
             print("⚠️ Error during polling:", e)
         time.sleep(30)
 
-# --- Flask dummy app ---
+# -- dummy Flask app for Render --
 app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "👋 Notion poller is running.", 200
+    return "👋 Polling server active", 200
 
 threading.Thread(target=poll_notion, daemon=True).start()
 
