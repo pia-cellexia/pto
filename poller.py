@@ -74,8 +74,7 @@ def extract_fields(page):
     ) if notes_key else "None"
 
     # Respondent (people[] list)
-    person_list = props.get(person_key, {}).get("people", []) if person_key else []
-    respondent = person_list[0].get("name", "Anonymous") if person_list else "Anonymous"
+    respondent = page.get("created_by", {}).get("name", "Anonymous")
 
     return title, pto_type, start_date, end_date, notes, respondent
 
