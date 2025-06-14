@@ -1,10 +1,13 @@
 import os
 import time
+import threading
 import requests
+from flask import Flask
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# ENV vars
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
@@ -46,17 +49,30 @@ def send_to_slack(title, pto_type, start_date, end_date, notes):
         }
     )
 
-def main():
-    print("Polling for new PTO requests...")
+def poll_notion():
+    print("✅ Notion poller running.")
     while True:
-        pages = query_notion()
-        for page in pages:
-            page_id = page["id"]
-            if page_id not in seen_pages:
-                seen_pages.add(page_id)
-                title, pto_type, start_date, end_date, notes = extract_fields(page)
-                send_to_slack(title, pto_type, start_date, end_date, notes)
-        time.sleep(30)  # check every 30 seconds
+        try:
+            pages = query_notion()
+            for page in pages:
+                page_id = page["id"]
+                if page_id not in seen_pages:
+                    seen_pages.add(page_id)
+                    fields = extract_fields(page)
+                    send_to_slack(*fields)
+        except Exception as e:
+            print("⚠️ Polling error:", e)
+        time.sleep(30)
+
+# --- Flask dummy app ---
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "👋 Notion poller is running.", 200
+
+# --- Start poller in a thread ---
+threading.Thread(target=poll_notion, daemon=True).start()
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

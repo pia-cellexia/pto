@@ -1,1 +1,1 @@
-worker: python poller.py
+web: python poller.py
