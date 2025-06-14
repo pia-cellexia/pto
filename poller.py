@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import threading
 import requests
 from flask import Flask
@@ -7,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ENV vars
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
@@ -19,7 +19,17 @@ NOTION_HEADERS = {
     "Content-Type": "application/json"
 }
 
-seen_pages = set()
+LAST_SEEN_FILE = "last_seen.txt"
+
+def load_last_seen():
+    if os.path.exists(LAST_SEEN_FILE):
+        with open(LAST_SEEN_FILE, "r") as f:
+            return f.read().strip()
+    return ""
+
+def save_last_seen(last):
+    with open(LAST_SEEN_FILE, "w") as f:
+        f.write(last)
 
 def query_notion():
     url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
@@ -49,7 +59,6 @@ def extract_fields(page):
 
     return title, pto_type, start_date, end_date, notes
 
-
 def send_to_slack(title, pto_type, start_date, end_date, notes):
     msg = f"📌 *New PTO Request!*\n*Title:* {title}\n*Type:* {pto_type}\n*Dates:* {start_date} → {end_date}\n*Notes:* {notes}"
     requests.post(
@@ -58,25 +67,29 @@ def send_to_slack(title, pto_type, start_date, end_date, notes):
             "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
             "Content-Type": "application/json"
         },
-        json={
-            "channel": SLACK_CHANNEL_ID,
-            "text": msg
-        }
+        json={"channel": SLACK_CHANNEL_ID, "text": msg}
     )
 
 def poll_notion():
-    print("✅ Notion poller running.")
+    print("✅ Poller started.")
+    last_seen = load_last_seen()
     while True:
         try:
             pages = query_notion()
+            new_pages = []
             for page in pages:
-                page_id = page["id"]
-                if page_id not in seen_pages:
-                    seen_pages.add(page_id)
-                    fields = extract_fields(page)
-                    send_to_slack(*fields)
+                created = page.get("created_time", "")
+                if created > last_seen:
+                    new_pages.append((created, page))
+            new_pages.sort()  # process oldest first
+
+            for created, page in new_pages:
+                fields = extract_fields(page)
+                send_to_slack(*fields)
+                last_seen = max(last_seen, created)
+                save_last_seen(last_seen)
         except Exception as e:
-            print("⚠️ Polling error:", e)
+            print("⚠️ Error during polling:", e)
         time.sleep(30)
 
 # --- Flask dummy app ---
@@ -86,7 +99,6 @@ app = Flask(__name__)
 def index():
     return "👋 Notion poller is running.", 200
 
-# --- Start poller in a thread ---
 threading.Thread(target=poll_notion, daemon=True).start()
 
 if __name__ == "__main__":
