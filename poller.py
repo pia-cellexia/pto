@@ -39,38 +39,43 @@ def query_notion():
 def extract_fields(page):
     props = page.get("properties", {})
 
-    # 🔍 Try to auto-detect keys
     def find_key_like(target):
         return next((k for k in props if target.lower() in k.lower()), None)
 
     title_key = find_key_like("PTO Request Title")
     type_key = find_key_like("PTO Type")
-    date_key = find_key_like("Date")
+    date_key = find_key_like("PTO Date")
     notes_key = find_key_like("Additional Notes")
     person_key = find_key_like("Respondent")
 
+    # Title
     title = (
         props.get(title_key, {}).get("title", [{}])[0]
         .get("text", {}).get("content", "Untitled")
     ) if title_key else "Untitled"
 
-    pto_type = (
-        props.get(type_key, {}).get("select", {}).get("name", "N/A")
-    ) if type_key else "N/A"
+    # PTO Type (multi_select or fallback to select)
+    type_prop = props.get(type_key, {}) if type_key else {}
+    multi_select = type_prop.get("multi_select", [])
+    if multi_select:
+        pto_type = ", ".join([opt.get("name", "N/A") for opt in multi_select])
+    else:
+        pto_type = type_prop.get("select", {}).get("name", "N/A")
 
+    # PTO Dates (start + end)
     date_range = props.get(date_key, {}).get("date", {}) if date_key else {}
     start_date = date_range.get("start", "N/A")
-    end_date = date_range.get("end", start_date) if date_range else start_date
+    end_date = date_range.get("end", start_date)
 
+    # Notes
     notes = (
         props.get(notes_key, {}).get("rich_text", [{}])[0]
         .get("text", {}).get("content", "None")
     ) if notes_key else "None"
 
-    respondent = (
-        props.get(person_key, {}).get("people", [{}])[0]
-        .get("name", "Anonymous")
-    ) if person_key else "Anonymous"
+    # Respondent (people[] list)
+    person_list = props.get(person_key, {}).get("people", []) if person_key else []
+    respondent = person_list[0].get("name", "Anonymous") if person_list else "Anonymous"
 
     return title, pto_type, start_date, end_date, notes, respondent
 
