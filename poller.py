@@ -46,7 +46,17 @@ def extract_fields(page):
     type_key = find_key_like("PTO Type")
     date_key = find_key_like("PTO Date")
     notes_key = find_key_like("Additional Notes")
-    respondent_key = find_key_like("Respondent")
+    creator = props.get(respondent_key, {}).get("created_by", {})
+    name = creator.get("name")
+    email = creator.get("person", {}).get("email")
+    
+    if name and email:
+        respondent = f"{name} ({email})"
+    elif email:
+        respondent = email
+    else:
+        respondent = "Anonymous"
+
 
     # Title
     title = (
